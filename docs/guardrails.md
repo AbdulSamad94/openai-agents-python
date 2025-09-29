@@ -152,3 +152,108 @@ async def main():
 2. This is the guardrail's output type.
 3. This is the guardrail function that receives the agent's output, and returns the result.
 4. This is the actual agent that defines the workflow.
+
+## Tool Guardrails
+
+In addition to agent-level input and output guardrails, you can also apply guardrails directly to individual tools. Tool guardrails provide fine-grained control over individual tool executions by allowing you to validate both tool inputs and outputs. This is useful for scenarios where you need to:
+
+- Block sensitive data from being passed to specific tools (input validation)
+- Prevent sensitive data from being returned by specific tools (output validation)
+- Apply specific security checks to individual tools
+
+Tool guardrails work similarly to agent-level guardrails but operate at the individual tool call level. They are defined using the [`ToolInputGuardrail`][agents.tool_guardrails.ToolInputGuardrail] and [`ToolOutputGuardrail`][agents.tool_guardrails.ToolOutputGuardrail] classes, which can be created using decorators or directly.
+
+### Tool Input Guardrails
+
+Tool input guardrails run before a tool is executed. They receive the tool arguments and can decide whether to allow, reject, or raise an exception. The guardrail function receives a [`ToolInputGuardrailData`][agents.tool_guardrails.ToolInputGuardrailData] object containing the context and agent information.
+
+```python
+from agents import tool_input_guardrail, ToolInputGuardrailData, ToolGuardrailFunctionOutput
+import json
+
+@tool_input_guardrail
+def reject_sensitive_words(data: ToolInputGuardrailData) -> ToolGuardrailFunctionOutput:
+    """Reject tool calls that contain sensitive words in arguments."""
+    try:
+        args = json.loads(data.context.tool_arguments) if data.context.tool_arguments else {}
+    except json.JSONDecodeError:
+        return ToolGuardrailFunctionOutput(output_info="Invalid JSON arguments")
+
+    sensitive_words = ["password", "hack", "exploit", "malware", "ACME"]
+    for key, value in args.items():
+        value_str = str(value).lower()
+        for word in sensitive_words:
+            if word.lower() in value_str:
+                return ToolGuardrailFunctionOutput.reject_content(
+                    message=f"🚨 Tool call blocked: contains '{word}'",
+                    output_info={"blocked_word": word, "argument": key},
+                )
+
+    return ToolGuardrailFunctionOutput(output_info="Input validated")
+```
+
+When a tool input guardrail's behavior is set to `raise_exception`, it raises a [`ToolInputGuardrailTripwireTriggered`][agents.exceptions.ToolInputGuardrailTripwireTriggered] exception.
+
+### Tool Output Guardrails
+
+Tool output guardrails run after a tool is executed but before the result is returned to the agent. They can inspect the tool's output and decide how to handle it. The guardrail function receives a [`ToolOutputGuardrailData`][agents.tool_guardrails.ToolOutputGuardrailData] object that extends the input data with the tool's output.
+
+```python
+from agents import tool_output_guardrail, ToolOutputGuardrailData
+
+@tool_output_guardrail
+def block_sensitive_output(data: ToolOutputGuardrailData) -> ToolGuardrailFunctionOutput:
+    """Block tool outputs that contain sensitive data."""
+    output_str = str(data.output).lower()
+
+    if "ssn" in output_str or "123-45-6789" in output_str:
+        return ToolGuardrailFunctionOutput.raise_exception(
+            output_info={"blocked_pattern": "SSN", "tool": data.context.tool_name},
+        )
+
+    return ToolGuardrailFunctionOutput(output_info="Output validated")
+```
+
+When a tool output guardrail's behavior is set to `raise_exception`, it raises a [`ToolOutputGuardrailTripwireTriggered`][agents.exceptions.ToolOutputGuardrailTripwireTriggered] exception.
+
+### Applying Guardrails to Tools
+
+You can attach guardrails to function tools by setting the `tool_input_guardrails` and `tool_output_guardrails` properties. These properties accept a list of guardrails:
+
+```python
+from agents import function_tool
+
+@function_tool
+def send_email(to: str, subject: str, body: str) -> str:
+    """Send an email to the specified recipient."""
+    return f"Email sent to {to} with subject '{subject}'"
+
+# Apply guardrails to the tool
+send_email.tool_input_guardrails = [reject_sensitive_words]
+send_email.tool_output_guardrails = [block_sensitive_output]
+```
+
+### Guardrail Behavior Types
+
+Tool guardrails return a [`ToolGuardrailFunctionOutput`][agents.tool_guardrails.ToolGuardrailFunctionOutput] object that can specify different behavior types:
+
+- [`ToolGuardrailFunctionOutput.allow()`][agents.tool_guardrails.ToolGuardrailFunctionOutput.allow]: Allow normal tool execution to continue
+- [`ToolGuardrailFunctionOutput.reject_content()`][agents.tool_guardrails.ToolGuardrailFunctionOutput.reject_content]: Reject the tool call/output but continue execution with a message to the model
+- [`ToolGuardrailFunctionOutput.raise_exception()`][agents.tool_guardrails.ToolGuardrailFunctionOutput.raise_exception]: Halt execution by raising a `ToolGuardrailTripwireTriggered` exception
+
+Additionally, you can create guardrails directly using the [`ToolInputGuardrail`][agents.tool_guardrails.ToolInputGuardrail] and [`ToolOutputGuardrail`][agents.tool_guardrails.ToolOutputGuardrail] classes instead of using decorators:
+
+```python
+from agents import ToolInputGuardrail, ToolOutputGuardrail
+
+def my_input_guardrail_func(data: ToolInputGuardrailData) -> ToolGuardrailFunctionOutput:
+    # Input guardrail logic
+    return ToolGuardrailFunctionOutput.allow()
+
+def my_output_guardrail_func(data: ToolOutputGuardrailData) -> ToolGuardrailFunctionOutput:
+    # Output guardrail logic
+    return ToolGuardrailFunctionOutput.allow()
+
+my_input_guardrail = ToolInputGuardrail(guardrail_function=my_input_guardrail_func)
+my_output_guardrail = ToolOutputGuardrail(guardrail_function=my_output_guardrail_func)
+```
