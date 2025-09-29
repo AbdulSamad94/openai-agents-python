@@ -239,7 +239,7 @@ Tool guardrails return a [`ToolGuardrailFunctionOutput`][agents.tool_guardrails.
 
 - [`ToolGuardrailFunctionOutput.allow()`][agents.tool_guardrails.ToolGuardrailFunctionOutput.allow]: Allow normal tool execution to continue
 - [`ToolGuardrailFunctionOutput.reject_content()`][agents.tool_guardrails.ToolGuardrailFunctionOutput.reject_content]: Reject the tool call/output but continue execution with a message to the model
-- [`ToolGuardrailFunctionOutput.raise_exception()`][agents.tool_guardrails.ToolGuardrailFunctionOutput.raise_exception]: Halt execution by raising a `ToolGuardrailTripwireTriggered` exception
+- [`ToolGuardrailFunctionOutput.raise_exception()`][agents.tool_guardrails.ToolGuardrailFunctionOutput.raise_exception]: Halt execution by raising either a `ToolInputGuardrailTripwireTriggered` or `ToolOutputGuardrailTripwireTriggered` exception depending on the guardrail type
 
 Additionally, you can create guardrails directly using the [`ToolInputGuardrail`][agents.tool_guardrails.ToolInputGuardrail] and [`ToolOutputGuardrail`][agents.tool_guardrails.ToolOutputGuardrail] classes instead of using decorators:
 
